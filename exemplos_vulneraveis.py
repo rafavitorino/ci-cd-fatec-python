@@ -20,7 +20,6 @@ teste para comitar
 # O CodeQL detectará que estamos concatenando input do usuário em uma query SQL
 # Isso permite que um atacante execute comandos SQL arbitrários
 
-"""
 import sqlite3
 
 def buscar_usuario_vulneravel(username):
@@ -32,6 +31,8 @@ def buscar_usuario_vulneravel(username):
     cursor.execute(query)  # CodeQL vai detectar aqui!
     
     return cursor.fetchall()
+"""
+
 
 # Como corrigir:
 def buscar_usuario_seguro(username):
