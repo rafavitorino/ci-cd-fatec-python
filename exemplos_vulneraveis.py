@@ -20,15 +20,6 @@ teste para comitar
 # O CodeQL detectará que estamos concatenando input do usuário em uma query SQL
 # Isso permite que um atacante execute comandos SQL arbitrários
 
-def buscar_usuario_seguro(username):
-    # ✅ SEGURO: Usar parâmetros preparados
-    conn = sqlite3.connect('database.db')
-    cursor = conn.cursor()
-    
-    query = "SELECT * FROM usuarios WHERE username = ?"
-    cursor.execute(query, (username,))
-    
-    return cursor.fetchall()
 """
 import sqlite3
 
@@ -58,6 +49,12 @@ def buscar_usuario_seguro(username):
 # EXEMPLO 2: COMMAND INJECTION (CWE-78) 🔴 CRITICAL
 # =============================================================================
 # O CodeQL detectará execução de comandos do sistema com input do usuário
+import os
+
+def executar_comando_vulneravel(filename):
+    # ❌ VULNERÁVEL: Execução de comando com input do usuário
+    os.system(f"cat {filename}")  # CodeQL vai detectar aqui!
+    # Atacante pode fazer: filename = "arquivo.txt; rm -rf /"
 
 """
 import os
