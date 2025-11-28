@@ -9,6 +9,8 @@ NÃO USE ESTES EXEMPLOS EM PRODUÇÃO!
 Este arquivo está comentado para não executar acidentalmente.
 Para testar o CodeQL, descomente um dos exemplos, faça commit
 e observe a pipeline detectar a vulnerabilidade.
+
+teste para comitar
 ==============================================================
 """
 
