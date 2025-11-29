@@ -3,7 +3,7 @@
 # =============================================================================
 # O CodeQL detectará execução de comandos do sistema com input do usuário
 
-
+"""
 import os
 
 def executar_comando_vulneravel(filename):
@@ -12,10 +12,11 @@ def executar_comando_vulneravel(filename):
     # Atacante pode fazer: filename = "arquivo.txt; rm -rf /"
 
 """
+
+
 # Como corrigir:
 import subprocess
 
 def executar_comando_seguro(filename):
     # ✅ SEGURO: Usar subprocess com lista de argumentos
     subprocess.run(["cat", filename], check=True)
-"""
