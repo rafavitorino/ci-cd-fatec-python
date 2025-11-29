@@ -5,6 +5,7 @@
 # 1. Correção do Bandit: Adicionado '|| true' para evitar queda abrupta do script.
 # 2. Remoção de Polling Manual: Removida a verificação via 'curl' que causa
 #    erros de permissão e race conditions. O CodeQL nativo gerencia isso.
+# 3. Script Customizado: Atualizado para ignorar linhas comentadas (#).
 # =============================================================================
 
 name: CI/CD Pipeline com CodeQL
@@ -123,11 +124,22 @@ jobs:
                       filepath = os.path.join(root, file)
                       try:
                           with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                              content = f.read()
-                          for pattern, description, vuln_type in VULNERABLE_PATTERNS:
-                              if re.search(pattern, content, re.MULTILINE | re.IGNORECASE):
-                                  found_issues.append({'file': filepath, 'desc': description, 'type': vuln_type})
-                                  break
+                              lines = f.readlines()
+
+                          # Verifica linha por linha para poder ignorar comentários
+                          for i, line in enumerate(lines):
+                              # Se a linha começar com # (ignorando espaços), pula a verificação
+                              if line.strip().startswith('#'):
+                                  continue
+                                  
+                              for pattern, description, vuln_type in VULNERABLE_PATTERNS:
+                                  if re.search(pattern, line, re.IGNORECASE):
+                                      # Adiciona o número da linha ao relatório (i+1)
+                                      found_issues.append({
+                                          'file': f"{filepath}:{i+1}", 
+                                          'desc': description, 
+                                          'type': vuln_type
+                                      })
                       except Exception:
                           pass
 
