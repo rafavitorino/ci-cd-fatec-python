@@ -95,26 +95,52 @@ jobs:
       # PASSO 7: Aguarda processamento dos resultados
       - name: ⏳ Aguardar processamento do CodeQL
         run: |
-          echo "⏳ Aguardando o GitHub processar os resultados do CodeQL..."
-          sleep 10
+          echo "⏳ Aguardando o GitHub processar os resultados do CodeQL (polling)..."
+          # Poll na API por até 5 minutos (300s) a cada 10s para ver se alertas foram gerados
+          GH_TOKEN=${{ github.token }}
+          REPO=${{ github.repository }}
+          REF=${{ github.ref }}
+          TIMEOUT=300
+          INTERVAL=10
+          ELAPSED=0
+          ALERT_COUNT=0
+
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            ALERTS=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/${REPO}/code-scanning/alerts?state=open&ref=${REF}")
+
+            ALERT_COUNT=$(echo "$ALERTS" | jq '. | length' 2>/dev/null || echo "0")
+
+            if [ "$ALERT_COUNT" -gt 0 ]; then
+              echo "📊 Total de alertas abertos: $ALERT_COUNT"
+              break
+            fi
+
+            echo "⏳ Nenhum alerta ainda. Aguardando ${INTERVAL}s (total aguardado: ${ELAPSED}s)..."
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          echo "📊 Total de alertas abertos: $ALERT_COUNT"
           
       # PASSO 8: Verifica alertas de segurança via API do GitHub
       - name: 🚫 Bloquear se houver vulnerabilidades
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          echo "🔍 Verificando alertas de Code Scanning..."
-          
-          # Busca alertas ativos via API do GitHub
+          echo "🔍 Verificando alertas de Code Scanning (resultado do polling anterior)..."
+
+          # Caso o polling anterior já tenha identificado alertas, vamos usar essa info
+          # Tentar obter alertas novamente para garantir consistência
           ALERTS=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/${{ github.repository }}/code-scanning/alerts?state=open&ref=refs/heads/main")
-          
-          # Conta o número de alertas
+            "https://api.github.com/repos/${{ github.repository }}/code-scanning/alerts?state=open&ref=${{ github.ref }}")
+
           ALERT_COUNT=$(echo "$ALERTS" | jq '. | length' 2>/dev/null || echo "0")
-          
+
           echo "📊 Total de alertas abertos: $ALERT_COUNT"
-          
+
           if [ "$ALERT_COUNT" -gt 0 ]; then
             echo ""
             echo "❌ ============================================"
@@ -130,7 +156,20 @@ jobs:
             echo ""
             exit 1
           else
-            echo "✅ Nenhuma vulnerabilidade encontrada. Pipeline pode continuar."
+            echo "✅ Nenhuma vulnerabilidade encontrada pelo CodeQL (após aguardar)."
+          fi
+
+          echo "🔎 Agora executando Bandit para checagem adicional de Python..."
+          pip install bandit jq || true
+          bandit -r . -f json -o bandit-report.json || true
+          BANDIT_COUNT=$(jq '.results | length' bandit-report.json 2>/dev/null || echo "0")
+          echo "📊 Bandit encontrou $BANDIT_COUNT problema(s)"
+          if [ "$BANDIT_COUNT" -gt 0 ]; then
+            echo "❌ Bandit detectou problemas de segurança. Falhando a pipeline." 
+            jq -r '.results[] | "  • [Severity: \(.issue_severity)] \(.issue_text) em \(.filename):\(.line_number)"' bandit-report.json || cat bandit-report.json
+            exit 1
+          else
+            echo "✅ Bandit não encontrou problemas críticos."
           fi
           
       - name: ✅ Análise de Segurança Aprovada
