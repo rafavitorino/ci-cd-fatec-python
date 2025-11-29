@@ -160,17 +160,92 @@ jobs:
           fi
 
           echo "🔎 Agora executando Bandit para checagem adicional de Python..."
-          pip install bandit jq || true
-          bandit -r . -f json -o bandit-report.json || true
+          pip install bandit
+          
+          # Executa Bandit E FALHA se houver erro ou problema encontrado
+          bandit -r . -f json -o bandit-report.json
+          BANDIT_EXIT_CODE=$?
+          
+          if [ $BANDIT_EXIT_CODE -ne 0 ]; then
+            echo "⚠️  Bandit retornou código de erro (pode ter encontrado problemas)"
+          fi
+          
           BANDIT_COUNT=$(jq '.results | length' bandit-report.json 2>/dev/null || echo "0")
           echo "📊 Bandit encontrou $BANDIT_COUNT problema(s)"
+          
           if [ "$BANDIT_COUNT" -gt 0 ]; then
-            echo "❌ Bandit detectou problemas de segurança. Falhando a pipeline." 
-            jq -r '.results[] | "  • [Severity: \(.issue_severity)] \(.issue_text) em \(.filename):\(.line_number)"' bandit-report.json || cat bandit-report.json
+            echo ""
+            echo "❌ ============================================"
+            echo "❌ BANDIT DETECTOU PROBLEMAS DE SEGURANÇA!"
+            echo "❌ ============================================"
+            jq -r '.results[] | "  • [Severity: \(.issue_severity)] \(.issue_text) em \(.filename):\(.line_number)"' bandit-report.json
+            echo "❌ ============================================"
             exit 1
-          else
-            echo "✅ Bandit não encontrou problemas críticos."
           fi
+          
+          # Script Python adicional: detectar padrões vulneráveis conhecidos
+          echo ""
+          echo "🔎 Executando análise de padrões vulneráveis customizados..."
+          python << 'PYTHON_SCRIPT'
+import os
+import re
+import sys
+
+VULNERABLE_PATTERNS = [
+    (r"os\.system\s*\(", "os.system com comando dinamicamente construído", "COMMAND_INJECTION"),
+    (r"subprocess\.(Popen|call|run)\s*\([^[]*[+\"]", "subprocess sem lista de argumentos", "COMMAND_INJECTION"),
+    (r"cursor\.execute\s*\(\s*f[\'\"]", "cursor.execute com f-string", "SQL_INJECTION"),
+    (r"cursor\.execute\s*\([^)]*[+%][^)]*\)", "cursor.execute com concatenação", "SQL_INJECTION"),
+    (r"open\s*\(\s*f[\'\"]", "open com f-string (path traversal)", "PATH_TRAVERSAL"),
+    (r"open\s*\([^)]*\+[^)]*\)", "open com concatenação de caminho", "PATH_TRAVERSAL"),
+    (r"PASSWORD\s*=\s*[\'\"][^\'\"]*[\'\"]", "senha hardcoded", "HARD_CODED_CREDENTIALS"),
+    (r"API_KEY\s*=\s*[\'\"][^\'\"]*[\'\"]", "API key hardcoded", "HARD_CODED_CREDENTIALS"),
+    (r"SECRET\s*=\s*[\'\"][^\'\"]*[\'\"]", "secret hardcoded", "HARD_CODED_CREDENTIALS"),
+    (r"pickle\.loads\(", "pickle.loads com dados não confiáveis", "INSECURE_DESERIALIZATION"),
+    (r"random\.(randint|choice|random)\s*\(", "random para criptografia", "WEAK_RANDOMNESS"),
+    (r"hashlib\.(md5|sha1)\(", "MD5 ou SHA1 para senha", "WEAK_CRYPTOGRAPHY"),
+]
+
+found_issues = []
+ignored_dirs = {'.git', '__pycache__', 'venv', 'env', '.venv', '.env', 'node_modules', '.pytest_cache'}
+
+for root, dirs, files in os.walk('.'):
+    # Remover diretórios ignorados
+    dirs[:] = [d for d in dirs if d not in ignored_dirs]
+    
+    for file in files:
+        if file.endswith('.py'):
+            filepath = os.path.join(root, file)
+            try:
+                with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read()
+                    
+                for pattern, description, vuln_type in VULNERABLE_PATTERNS:
+                    if re.search(pattern, content, re.MULTILINE | re.IGNORECASE):
+                        found_issues.append({
+                            'file': filepath,
+                            'description': description,
+                            'type': vuln_type
+                        })
+                        break  # Evitar duplicatas no mesmo arquivo
+            except Exception as e:
+                pass
+
+if found_issues:
+    print("")
+    print("❌ ============================================")
+    print("❌ PROBLEMAS DE SEGURANÇA ENCONTRADOS!")
+    print("❌ ============================================")
+    for issue in found_issues:
+        print(f"  • [{issue['type']}] {issue['description']} em {issue['file']}")
+    print("❌ ============================================")
+    sys.exit(1)
+else:
+    print("✅ Nenhum padrão vulnerável detectado na análise customizada.")
+PYTHON_SCRIPT
+          
+          echo ""
+          echo "✅ Todas as verificações de segurança passaram!"
           
       - name: ✅ Análise de Segurança Aprovada
         if: success()
